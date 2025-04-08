@@ -2,6 +2,13 @@
 
 A simple tool to get product information from Amazon using ASIN numbers.
 
+## Clone the Repository
+
+```bash
+git clone https://github.com/njraladdin/asin-product-details-scraper.git
+cd asin-product-details-scraper
+```
+
 ## Requirements
 
 - Python 3.7+

@@ -40,3 +40,5 @@ proxies.txt
 # OS specific
 .DS_Store
 Thumbs.db 
+
+output_debug 
