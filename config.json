@@ -1,0 +1,9 @@
+{
+    "initial_session_pool_size": 5,
+    "allow_proxy": false,
+    "concurrent_requests_control": {
+        "initial_concurrent": 3,
+        "scale_up_delay": 0.0005,
+        "scale_increment": 2
+    }
+} 
