@@ -21,8 +21,11 @@ pip install -r requirements.txt
 # Get data for one or more products
 python main.py B09X7CRKRZ B07CRG7BBH
 
-# Get data from a file
-python main.py --file asins.txt
+# Get data from a text file
+python main.py --file examples/example.txt
+
+# Get data from a CSV file
+python main.py --file examples/example.csv
 ```
 
 ## Configuration

@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from logger import setup_logger
+from .logger import setup_logger
 
 logger = setup_logger('Utils')
 
@@ -9,7 +9,7 @@ def load_config():
     """
     Load configuration from config.json file
     """
-    config_path = Path(__file__).parent / "config.json"
+    config_path = Path(__file__).parent.parent / "config" / "config.json"
     
     try:
         with open(config_path, "r") as f:

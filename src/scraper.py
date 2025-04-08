@@ -20,8 +20,8 @@ import aiohttp
 from typing import Dict, Any, List
 import threading
 from datetime import datetime
-from logger import setup_logger
-from utils import load_config
+from .logger import setup_logger
+from .utils import load_config
 import asyncio
 from queue import Queue
 
@@ -35,23 +35,34 @@ init(autoreset=True)
 class AmazonScraper:
     def __init__(self):
         self.logger = setup_logger('AmazonScraper')
-        # Read and parse proxies from proxies.txt
-        with open('proxies.txt', 'r') as f:
-            proxies = [line.strip() for line in f.readlines() if line.strip()]
-        
-        # Get config
+        # Get config first
         config = load_config()
         
+        # Initialize proxy as None by default
+        self.proxy = None
+        
         if config.get('allow_proxy', True):
-            # Randomly select a proxy
-            proxy_line = random.choice(proxies)
-            ip, port, username, password = proxy_line.split(':')
-            
-            # Format the proxy string
-            self.proxy = f"http://{username}:{password}@{ip}:{port}"
-            self.logger.success(f"AmazonScraper initialized with proxy: {ip}:{port}")
+            try:
+                # Read and parse proxies from proxies.txt if it exists
+                if os.path.exists('proxies.txt'):
+                    with open('proxies.txt', 'r') as f:
+                        proxies = [line.strip() for line in f.readlines() if line.strip()]
+                    
+                    if proxies:
+                        # Randomly select a proxy
+                        proxy_line = random.choice(proxies)
+                        ip, port, username, password = proxy_line.split(':')
+                        
+                        # Format the proxy string
+                        self.proxy = f"http://{username}:{password}@{ip}:{port}"
+                        self.logger.success(f"AmazonScraper initialized with proxy: {ip}:{port}")
+                    else:
+                        self.logger.warning("proxies.txt is empty - running without proxy")
+                else:
+                    self.logger.warning("proxies.txt not found - running without proxy")
+            except Exception as e:
+                self.logger.error(f"Error reading proxies.txt: {str(e)} - running without proxy")
         else:
-            self.proxy = None
             self.logger.info("AmazonScraper initialized without proxy (disabled in config)")
         
         # Create output directories if saving is enabled

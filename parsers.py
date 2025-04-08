@@ -13,12 +13,12 @@ def parse_offers(html_text):
             - offers_json is the JSON string of parsed offers
             - has_prime_filter is a boolean indicating if Prime filter is available
     """
-    # Ensure output directory exists
-    os.makedirs('output', exist_ok=True)
+    # Ensure debug directory exists
+    os.makedirs('output_debug', exist_ok=True)
     
-    # Save HTML content to output folder
+    # Save HTML content to debug folder
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_path = f'output/offers_{timestamp}.html'
+    output_path = f'output_debug/offers_{timestamp}.html'
     
     try:
         with open(output_path, 'w', encoding='utf-8') as f:

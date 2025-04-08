@@ -1,9 +1,9 @@
 from queue import Queue
 import threading
-from amazon_scraper import AmazonScraper
-from logger import setup_logger
+from .scraper import AmazonScraper
+from .logger import setup_logger
 from concurrent.futures import ThreadPoolExecutor
-from utils import load_config
+from .utils import load_config
 import time
 
 class SessionPool:

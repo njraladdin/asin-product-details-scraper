@@ -4,7 +4,7 @@ import os
 import csv
 from datetime import datetime
 from colorama import init, Fore, Style
-from amazon_scraper import AmazonScraper
+from src.scraper import AmazonScraper
 
 # Initialize colorama for colored console output
 init(autoreset=True)
