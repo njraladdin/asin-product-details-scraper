@@ -12,18 +12,27 @@ import tls_client
 import json
 import http.cookies
 import os
-from parsers import parse_offers, parse_product_details
-from colorama import init, Fore, Style
 import time
 import random
 import aiohttp
 from typing import Dict, Any, List
 import threading
 from datetime import datetime
-from .logger import setup_logger
-from .utils import load_config
 import asyncio
 from queue import Queue
+from colorama import init, Fore, Style
+
+# Handle imports differently based on how the script is being run
+try:
+    # When imported as a module from parent directory
+    from src.parsers import parse_offers, parse_product_details
+    from src.logger import setup_logger
+    from src.utils import load_config
+except ImportError:
+    # When run directly from src directory
+    from parsers import parse_offers, parse_product_details
+    from logger import setup_logger
+    from utils import load_config
 
 # Configuration constants
 SAVE_OUTPUT = False  # Set to True to save files to output folder
@@ -115,9 +124,9 @@ class AmazonScraper:
                 return None
 
         self._log_info(f"Making initial request for ASIN: {asin}")
-        initial_url = "https://www.amazon.com"
-        product_url = f"https://www.amazon.com/dp/{asin}"
-
+        initial_url = "https://www.amazon.in"
+        product_url = f"https://www.amazon.in/dp/{asin}"
+        print(product_url)
         headers = {
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'accept-language': 'en-US,en;q=0.9,be;q=0.8,ar;q=0.7',
@@ -257,7 +266,7 @@ class AmazonScraper:
             return None
 
         self._log_info("Requesting modal HTML...")
-        modal_url = "https://www.amazon.com/portal-migration/hz/glow/get-rendered-address-selections?deviceType=desktop&pageType=Detail&storeContext=photo&actionSource=desktop-modal"
+        modal_url = "https://www.amazon.in/portal-migration/hz/glow/get-rendered-address-selections?deviceType=desktop&pageType=Detail&storeContext=photo&actionSource=desktop-modal"
         
         headers = {
             'accept': 'text/html,*/*',
@@ -268,8 +277,8 @@ class AmazonScraper:
             'downlink': '8.85',
             'dpr': '1',
             'ect': '4g',
-            'origin': 'https://www.amazon.com',
-            'referer': 'https://www.amazon.com/',
+            'origin': 'https://www.amazon.in',
+            'referer': 'https://www.amazon.in/',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
             'viewport-width': '1120',
             'x-requested-with': 'XMLHttpRequest'
@@ -328,7 +337,7 @@ class AmazonScraper:
             return None
 
         self._log_info(f"Fetching offers page for ASIN: {asin}{' (Prime only)' if prime_only else ''}")
-        base_url = f"https://www.amazon.com/gp/product/ajax/ref=dp_aod_ALL_mbc?asin={asin}&m=&qid=&smid=&sourcecustomerorglistid=&sourcecustomerorglistitemid=&sr=&pc=dp&experienceId=aodAjaxMain"
+        base_url = f"https://www.amazon.in/gp/product/ajax/ref=dp_aod_ALL_mbc?asin={asin}&m=&qid=&smid=&sourcecustomerorglistid=&sourcecustomerorglistitemid=&sr=&pc=dp&experienceId=aodAjaxMain"
         
         # Add Prime filter if requested
         if prime_only:
@@ -344,7 +353,7 @@ class AmazonScraper:
             'dpr': '1',
             'ect': '4g',
             'priority': 'u=1, i',
-            'referer': 'https://www.amazon.com/SanDisk-Extreme-microSDXC-Memory-Adapter/dp/B09X7CRKRZ/136-1912212-8057361?pd_rd_w=YOwz1&content-id=amzn1.sym.53b72ea0-a439-4b9d-9319-7c2ee5c88973&pf_rd_p=53b72ea0-a439-4b9d-9319-7c2ee5c88973&pf_rd_r=VBP362SNAXS96Y4DP9V1&pd_rd_wg=Z1aCo&pd_rd_r=ff18059e-7648-474f-8a5c-4a7ed8d8ba55&pd_rd_i=B09X7CRKRZ&th=1',
+            'referer': 'https://www.amazon.in/SanDisk-Extreme-microSDXC-Memory-Adapter/dp/B09X7CRKRZ/136-1912212-8057361?pd_rd_w=YOwz1&content-id=amzn1.sym.53b72ea0-a439-4b9d-9319-7c2ee5c88973&pf_rd_p=53b72ea0-a439-4b9d-9319-7c2ee5c88973&pf_rd_r=VBP362SNAXS96Y4DP9V1&pd_rd_wg=Z1aCo&pd_rd_r=ff18059e-7648-474f-8a5c-4a7ed8d8ba55&pd_rd_i=B09X7CRKRZ&th=1',
             'rtt': '150',
             'sec-ch-device-memory': '8',
             'sec-ch-dpr': '1',

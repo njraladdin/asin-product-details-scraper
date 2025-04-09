@@ -1,6 +1,6 @@
 from queue import Queue
 import threading
-from .scraper import AmazonScraper
+from .amazon_scraper import AmazonScraper
 from .logger import setup_logger
 from concurrent.futures import ThreadPoolExecutor
 from .utils import load_config

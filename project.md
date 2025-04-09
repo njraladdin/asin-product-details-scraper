@@ -7,3 +7,9 @@ Create a Python script to take Amazon.in ASIN numbers as input and generate a de
 5. Product Description (About this item)
 6. Product information
 7. Variants available (optional)
+
+
+TODO:
+- use amazon india instead, done 
+- issues with installing requirements 
+- output in CSV / xlsx

@@ -1,7 +1,14 @@
 import json
 import os
 from pathlib import Path
-from .logger import setup_logger
+
+# Handle imports differently based on how the script is being run
+try:
+    # When imported as a module from parent directory
+    from src.logger import setup_logger
+except ImportError:
+    # When run directly from src directory
+    from logger import setup_logger
 
 logger = setup_logger('Utils')
 
