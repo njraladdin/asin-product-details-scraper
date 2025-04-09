@@ -11,18 +11,33 @@ cd asin-product-details-scraper
 
 ## Requirements
 
-- Python 3.7+
-- Required packages (see requirements.txt)
+- Python 3.8 to 3.12 (Python 3.13 is NOT supported due to lxml compatibility issues)
 
-## Installation
+## Quick Start
 
-1. Clone this repository
-2. Install requirements:
 ```bash
-pip install -r requirements.txt
-```
+# 1. Create a virtual environment
+# On Windows:
+python -m venv venv
+# On macOS/Linux:
+python3 -m venv venv
 
-## Usage
+# 2. Activate the virtual environment
+# On Windows (Command Prompt):
+venv\Scripts\activate.bat
+# On Windows (PowerShell):
+venv\Scripts\Activate.ps1
+# On macOS/Linux:
+source venv/bin/activate
+
+# 3. Install the package with all dependencies
+pip install .
+
+# 4. Run the scraper
+python main.py B09X7CRKRZ
+``` 
+
+## Detailed Usage
 
 ```bash
 # Get data for one or more products

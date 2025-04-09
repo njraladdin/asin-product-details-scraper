@@ -2,9 +2,16 @@ import argparse
 import json
 import os
 import csv
+import sys
 from datetime import datetime
 from colorama import init, Fore, Style
 from src.amazon_scraper import AmazonScraper
+
+# Check Python version
+if sys.version_info < (3, 8) or sys.version_info >= (3, 13):
+    print(f"Error: This script requires Python 3.8 to 3.12. You're using Python {sys.version.split()[0]}")
+    print("Python 3.13 is not supported due to lxml compatibility issues.")
+    sys.exit(1)
 
 # Initialize colorama for colored console output
 init(autoreset=True)
