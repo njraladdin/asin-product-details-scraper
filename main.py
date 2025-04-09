@@ -6,42 +6,51 @@ import sys
 from datetime import datetime
 from colorama import init, Fore, Style
 from src.amazon_scraper import AmazonScraper
+from src.csv_formatter import save_as_csv, save_combined_csv, get_complete_flattened_data
 
-# Check Python version
-if sys.version_info < (3, 8) or sys.version_info >= (3, 13):
-    print(f"Error: This script requires Python 3.8 to 3.12. You're using Python {sys.version.split()[0]}")
-    print("Python 3.13 is not supported due to lxml compatibility issues.")
-    sys.exit(1)
 
 # Initialize colorama for colored console output
 init(autoreset=True)
 
-def process_asin(scraper, asin):
-    """Process a single ASIN and save its data"""
+def process_asin(scraper, asin, combined_csv_data=None):
+    """Process a single ASIN and save its data
+    
+    Args:
+        scraper: The AmazonScraper instance
+        asin: The ASIN to process
+        combined_csv_data: List to append CSV data for multiple products
+        
+    Returns:
+        bool: Success or failure
+        dict: CSV row data 
+    """
     try:
         # Get product data
         result = scraper.get_product_data(asin)
         if not result:
             print(f"{Fore.RED}[ERROR] Failed to get data for ASIN: {asin}{Style.RESET_ALL}")
-            return False
+            return False, None
 
         # Create output directory if it doesn't exist
         os.makedirs('output', exist_ok=True)
 
-        # Generate filename with timestamp
+        # Generate timestamp for filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f'output/product_{asin}_{timestamp}.json'
-
-        # Save the result
-        with open(filename, 'w', encoding='utf-8') as f:
+        
+        # Save as JSON
+        json_filename = f'output/product_{asin}_{timestamp}.json'
+        with open(json_filename, 'w', encoding='utf-8') as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
-
-        print(f"{Fore.GREEN}[SUCCESS] Saved product data to {filename}{Style.RESET_ALL}")
-        return True
+        print(f"{Fore.GREEN}[SUCCESS] Saved product data to {json_filename}{Style.RESET_ALL}")
+        
+        # Prepare CSV data for the combined CSV file
+        csv_data = get_complete_flattened_data(result)
+        
+        return True, csv_data
 
     except Exception as e:
         print(f"{Fore.RED}[ERROR] Failed to process ASIN {asin}: {str(e)}{Style.RESET_ALL}")
-        return False
+        return False, None
 
 def main():
     # Set up argument parser with simple help messages
@@ -112,12 +121,27 @@ Examples:
     # Initialize scraper
     scraper = AmazonScraper()
 
+    # Prepare for CSV data collection
+    combined_csv_data = []
+
     # Process each ASIN
     success_count = 0
     for asin in all_asins:
         print(f"\n{Fore.CYAN}Processing ASIN: {asin}{Style.RESET_ALL}")
-        if process_asin(scraper, asin):
+        success, csv_data = process_asin(scraper, asin, combined_csv_data)
+        if success:
             success_count += 1
+            if csv_data:
+                combined_csv_data.append(csv_data)
+
+    # Save consolidated CSV with all products
+    if combined_csv_data:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        combined_filename = f'output/all_products_{timestamp}.csv'
+        if save_combined_csv(combined_csv_data, combined_filename):
+            print(f"{Fore.GREEN}[SUCCESS] Saved all product data to {combined_filename}{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.RED}[ERROR] Failed to save consolidated CSV file{Style.RESET_ALL}")
 
     # Print summary
     print(f"\n{Fore.CYAN}=== Summary ==={Style.RESET_ALL}")

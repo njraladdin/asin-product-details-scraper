@@ -161,7 +161,7 @@ class AmazonScraper:
                     self._log_success(f"Saved product page to {html_filename}")
 
             # Parse product details only if explicitly requested and if we don't have them
-            if parse_details and not self.product_details:
+            if parse_details:
                 try:
                     self.product_details = parse_product_details(response.text)
                     
