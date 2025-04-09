@@ -1,12 +1,10 @@
 import argparse
-import json
-import os
 import csv
+import os
 import sys
-from datetime import datetime
 from colorama import init, Fore, Style
 from src.amazon_scraper import AmazonScraper
-from src.csv_formatter import save_as_csv, save_combined_csv, get_complete_flattened_data
+from src.exporter import export_product_data, export_combined_products, print_summary
 
 
 # Initialize colorama for colored console output
@@ -22,35 +20,26 @@ def process_asin(scraper, asin, combined_csv_data=None):
         
     Returns:
         bool: Success or failure
-        dict: CSV row data 
     """
     try:
         # Get product data
         result = scraper.get_product_data(asin)
         if not result:
             print(f"{Fore.RED}[ERROR] Failed to get data for ASIN: {asin}{Style.RESET_ALL}")
-            return False, None
+            return False
 
-        # Create output directory if it doesn't exist
-        os.makedirs('output', exist_ok=True)
-
-        # Generate timestamp for filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Export product data to files and get CSV data
+        success, csv_data = export_product_data(result, asin)
         
-        # Save as JSON
-        json_filename = f'output/product_{asin}_{timestamp}.json'
-        with open(json_filename, 'w', encoding='utf-8') as f:
-            json.dump(result, f, indent=2, ensure_ascii=False)
-        print(f"{Fore.GREEN}[SUCCESS] Saved product data to {json_filename}{Style.RESET_ALL}")
-        
-        # Prepare CSV data for the combined CSV file
-        csv_data = get_complete_flattened_data(result)
-        
-        return True, csv_data
+        # If export successful and we have CSV data, add to combined data
+        if success and csv_data and combined_csv_data is not None:
+            combined_csv_data.append(csv_data)
+            
+        return success
 
     except Exception as e:
         print(f"{Fore.RED}[ERROR] Failed to process ASIN {asin}: {str(e)}{Style.RESET_ALL}")
-        return False, None
+        return False
 
 def main():
     # Set up argument parser with simple help messages
@@ -128,27 +117,15 @@ Examples:
     success_count = 0
     for asin in all_asins:
         print(f"\n{Fore.CYAN}Processing ASIN: {asin}{Style.RESET_ALL}")
-        success, csv_data = process_asin(scraper, asin, combined_csv_data)
-        if success:
+        if process_asin(scraper, asin, combined_csv_data):
             success_count += 1
-            if csv_data:
-                combined_csv_data.append(csv_data)
 
-    # Save consolidated CSV with all products
+    # Export combined product data to CSV
     if combined_csv_data:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        combined_filename = f'output/all_products_{timestamp}.csv'
-        if save_combined_csv(combined_csv_data, combined_filename):
-            print(f"{Fore.GREEN}[SUCCESS] Saved all product data to {combined_filename}{Style.RESET_ALL}")
-        else:
-            print(f"{Fore.RED}[ERROR] Failed to save consolidated CSV file{Style.RESET_ALL}")
+        export_combined_products(combined_csv_data)
 
-    # Print summary
-    print(f"\n{Fore.CYAN}=== Summary ==={Style.RESET_ALL}")
-    print(f"Total ASINs processed: {len(all_asins)}")
-    print(f"Successfully saved: {success_count}")
-    print(f"Failed: {len(all_asins) - success_count}")
-    print(f"Output files are in the 'output' folder")
+    # Print summary of processing
+    print_summary(len(all_asins), success_count)
 
 if __name__ == "__main__":
     main() 

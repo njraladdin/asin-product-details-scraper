@@ -12,4 +12,4 @@ Create a Python script to take Amazon.in ASIN numbers as input and generate a de
 TODO:
 - use amazon india instead, done 
 - issues with installing requirements, done 
-- output in CSV / xlsx
+- output in CSV, done 
