@@ -3,6 +3,32 @@ import json
 from datetime import datetime, timedelta
 import re
 import os
+import unicodedata
+
+def clean_unicode_control_chars(text):
+    """
+    Removes Unicode control characters and other problematic invisible characters.
+    Specifically targets characters like U+200E (Left-to-Right Mark) that might
+    appear as mojibake in the output.
+    
+    Args:
+        text (str): The text to clean
+        
+    Returns:
+        str: The cleaned text with control characters removed
+    """
+    if not text:
+        return text
+        
+    # Remove Left-to-Right Mark and Right-to-Left Mark
+    text = text.replace('\u200E', '').replace('\u200F', '')
+    
+    # Remove other Unicode control and formatting characters (category "C" and "Z")
+    # But keep normal whitespace
+    clean_text = ''.join(ch for ch in text if not unicodedata.category(ch).startswith(('C', 'Z')) 
+                         or ch in (' ', '\t', '\n', '\r'))
+    
+    return clean_text
 
 def parse_offers(html_text):
     """
@@ -275,7 +301,10 @@ def parse_product_details(html_text):
         try:
             title_element = center_col.xpath('.//span[@id="productTitle"]')
             if title_element:
-                main_product_details_section['product_title'] = title_element[0].text_content().strip() # Use text_content() for robustness
+                title_text = title_element[0].text_content().strip() # Use text_content() for robustness
+                # Clean the title text of special Unicode characters
+                title_text = clean_unicode_control_chars(title_text)
+                main_product_details_section['product_title'] = title_text
                 print(f"DEBUG: Found product title: {main_product_details_section['product_title'][:30]}...")
         except Exception as e:
             print(f"ERROR in product title extraction: {str(e)}")
@@ -292,6 +321,8 @@ def parse_product_details(html_text):
                         brand_text = brand_text[:-len(" Store")]
                 elif brand_text.startswith("Shop "): # Handle cases like "Shop LG"
                     brand_text = brand_text.split(" ", 1)[1]
+                # Clean Unicode control characters from brand text
+                brand_text = clean_unicode_control_chars(brand_text)
                 main_product_details_section['brand'] = brand_text
                 print(f"DEBUG: Extracted brand: {brand_text}")
         except Exception as e:
@@ -325,6 +356,8 @@ def parse_product_details(html_text):
                 # Get all text directly under the span, ignoring children like <a>
                 bullet_text = ''.join(li_span.xpath('./text()')).strip()
                 if bullet_text:
+                    # Clean Unicode control characters from bullet text
+                    bullet_text = clean_unicode_control_chars(bullet_text)
                     about_item_bullets.append(bullet_text)
             if about_item_bullets:
                 main_product_details_section['feature_bullets'] = about_item_bullets
@@ -347,11 +380,17 @@ def parse_product_details(html_text):
                 # Get the size/capacity/color etc. (handle different variation types)
                 label_element = option.xpath('.//span[contains(@class, "a-size-base")]/text()') # More generic label
                 if label_element:
-                     option_data['label'] = label_element[0].strip()
+                     label_text = label_element[0].strip()
+                     # Clean Unicode control characters from label text
+                     label_text = clean_unicode_control_chars(label_text)
+                     option_data['label'] = label_text
                 else: # Fallback for image swatches alt text
                      img_alt = option.xpath('.//img/@alt')
                      if img_alt:
-                         option_data['label'] = img_alt[0].strip()
+                         alt_text = img_alt[0].strip()
+                         # Clean Unicode control characters from alt text
+                         alt_text = clean_unicode_control_chars(alt_text)
+                         option_data['label'] = alt_text
 
                 # Get the price (use text_content() for robustness)
                 price_element = option.xpath('.//span[contains(@class, "a-price")]/span[@aria-hidden="true"]')
@@ -458,10 +497,13 @@ def parse_product_details(html_text):
                              pass # Ignore script parsing errors silently
 
                 if video_url and video_url[0]:
+                    title_text = title_elem[0].strip() if title_elem and title_elem[0] else None
+                    if title_text:
+                        title_text = clean_unicode_control_chars(title_text)
                     media_item = {
                         'url': video_url[0],
                         'thumbnail': thumb_url[0] if thumb_url else None,
-                        'title': title_elem[0].strip() if title_elem and title_elem[0] else None
+                        'title': title_text
                     }
                     media['videos'].append(media_item)
         except Exception as e:
@@ -587,6 +629,11 @@ def parse_product_details(html_text):
                                     key = re.sub(r'\s+', ' ', key).strip()
                                     # Clean value: remove leading/trailing whitespace, collapse internal whitespace/newlines
                                     value = re.sub(r'\s+', ' ', value).strip()
+                                    
+                                    # Remove special Unicode control characters like U+200E (Left-to-right mark)
+                                    # and other invisible formatting characters
+                                    key = clean_unicode_control_chars(key)
+                                    value = clean_unicode_control_chars(value)
 
                                     if key and value:
                                         print(f"DEBUG: Processing table row: {key[:20]}...")
@@ -614,6 +661,7 @@ def parse_product_details(html_text):
                                             current_rank = ""
                                             for span in rank_spans:
                                                 text_content = span.text_content().strip()
+                                                text_content = clean_unicode_control_chars(text_content)
                                                 if text_content.startswith('#'):
                                                     # If we already have a rank being built, add it first
                                                     if current_rank:
@@ -634,6 +682,7 @@ def parse_product_details(html_text):
 
                                             if ranks_list:
                                                 # Store as list if multiple, or single string if one
+                                                ranks_list = [clean_unicode_control_chars(rank) for rank in ranks_list]
                                                 target_dict['Best Sellers Rank'] = ranks_list[0] if len(ranks_list) == 1 else ranks_list
                                                 continue # Skip adding the raw text value
 
@@ -670,6 +719,8 @@ def parse_product_details(html_text):
             if warranty_section:
                  warranty_text = warranty_section[0].text_content().strip()
                  warranty_text = re.sub(r'\s+', ' ', warranty_text).strip()
+                 # Clean Unicode control characters from warranty text
+                 warranty_text = clean_unicode_control_chars(warranty_text)
                  if warranty_text and 'warranty_information' not in product_info:
                      # Try to find a specific link if available
                      link = warranty_section[0].xpath('.//a/@href')
@@ -693,6 +744,8 @@ def parse_product_details(html_text):
                         print(f"DEBUG: Found {len(important_info_content)} text elements in important info")
                         
                         full_text = ' '.join(text.strip() for text in important_info_content if text.strip())
+                        # Clean Unicode control characters from important information text
+                        full_text = clean_unicode_control_chars(full_text)
                         if full_text and 'important_information' not in product_info:
                             product_info['important_information'] = full_text
                     except Exception as xpath_error:
@@ -741,23 +794,37 @@ def parse_product_details(html_text):
 
                 if img:
                      text = ' '.join(p.strip() for p in paragraph if p.strip()) # Combine paragraphs if image is primary
+                     # Clean Unicode control characters from alt and text
+                     alt_text = img_alt[0].strip() if img_alt else None
+                     if alt_text:
+                         alt_text = clean_unicode_control_chars(alt_text)
+                     if text:
+                         text = clean_unicode_control_chars(text)
                      aplus_content.append({
                          'type': 'image_with_text',
                          'url': img[0],
-                         'alt': img_alt[0].strip() if img_alt else None,
+                         'alt': alt_text,
                          'text': text if text else None # Add associated text if found
                      })
                 elif heading:
+                     heading_text = heading[0].strip()
                      text = ' '.join(p.strip() for p in paragraph if p.strip())
+                     # Clean Unicode control characters
+                     if heading_text:
+                         heading_text = clean_unicode_control_chars(heading_text)
+                     if text:
+                         text = clean_unicode_control_chars(text)
                      aplus_content.append({
                          'type': 'heading_with_text',
-                         'heading': heading[0].strip(),
+                         'heading': heading_text,
                          'text': text if text else None
                      })
                 elif paragraph:
                      # Only add paragraph if it wasn't associated with an image or heading above
                      text = ' '.join(p.strip() for p in paragraph if p.strip())
                      if text and not any(item.get('text') == text for item in aplus_content): # Avoid duplicates
+                         # Clean Unicode control characters
+                         text = clean_unicode_control_chars(text)
                          aplus_content.append({'type': 'text', 'text': text})
 
             if aplus_content:
@@ -789,9 +856,12 @@ def parse_product_details(html_text):
                     hero_image = []
 
                 if hero_image:
+                    alt_text = hero_image[0].get('alt', '').strip()
+                    # Clean Unicode control characters from alt text
+                    alt_text = clean_unicode_control_chars(alt_text)
                     brand_story_section['hero_image'] = {
                         'url': hero_image[0].get('data-src') or hero_image[0].get('src'), # Prioritize data-src
-                        'alt': hero_image[0].get('alt', '').strip()
+                        'alt': alt_text
                     }
 
                 # Get the carousel cards content
@@ -810,27 +880,37 @@ def parse_product_details(html_text):
                     bg_image = card.xpath('.//img[contains(@class,"background")]/@src | .//img[contains(@class,"background")]/@data-src | .//img[not(contains(@class,"logo"))]/@src | .//img[not(contains(@class,"logo"))]/@data-src')
                     bg_alt = card.xpath('.//img[contains(@class,"background")]/@alt | .//img[not(contains(@class,"logo"))]/@alt')
                     if bg_image:
+                         bg_alt_text = bg_alt[0].strip() if bg_alt else None
+                         if bg_alt_text:
+                             bg_alt_text = clean_unicode_control_chars(bg_alt_text)
                          card_data['background_image'] = {
                              'url': bg_image[0],
-                             'alt': bg_alt[0].strip() if bg_alt else None
+                             'alt': bg_alt_text
                          }
 
                     # Get logo image
                     logo_img = card.xpath('.//img[contains(@class, "logo")]/@src | .//img[contains(@class, "logo")]/@data-src')
                     logo_alt = card.xpath('.//img[contains(@class, "logo")]/@alt')
                     if logo_img:
+                        logo_alt_text = logo_alt[0].strip() if logo_alt else None
+                        if logo_alt_text:
+                            logo_alt_text = clean_unicode_control_chars(logo_alt_text)
                         card_data['logo'] = {
                             'url': logo_img[0],
-                            'alt': logo_alt[0].strip() if logo_alt else None
+                            'alt': logo_alt_text
                         }
 
                     # Get text content (heading, paragraph)
                     heading = card.xpath('.//h3/text() | .//h4/text()')
                     paragraph = card.xpath('.//p/text()')
                     if heading:
-                        card_data['heading'] = heading[0].strip()
+                        heading_text = heading[0].strip()
+                        heading_text = clean_unicode_control_chars(heading_text)
+                        card_data['heading'] = heading_text
                     if paragraph:
-                        card_data['text'] = paragraph[0].strip()
+                        paragraph_text = paragraph[0].strip()
+                        paragraph_text = clean_unicode_control_chars(paragraph_text)
+                        card_data['text'] = paragraph_text
 
                     # Get ASIN if linked
                     asin_link = card.xpath('.//a[contains(@href, "/dp/")]/@href')
