@@ -251,446 +251,689 @@ def parse_product_details(html_text):
         html_text: The HTML content of the product page.
 
     Returns:
-        A dictionary containing the parsed product details.  Returns an empty
+        A dictionary containing the parsed product details. Returns an empty
         dictionary if the main product details section is not found.
     """
-    tree = html.fromstring(html_text)
-    product_details = {}
-    main_product_details_section = {}  # Renamed from main_product_section_details
+    try:
+        print("DEBUG: Starting parse_product_details")
+        tree = html.fromstring(html_text)
+        product_details = {}
+        main_product_details_section = {}
 
-    # Find the main product details section
-    center_col = tree.xpath('//div[@id="centerCol"]')
-    if not center_col:
-        return {}  # Return empty dict if main section not found
+        # Find the main product details section
+        print("DEBUG: Searching for centerCol")
+        center_col = tree.xpath('//div[@id="centerCol"]')
+        if not center_col:
+            print("WARNING: centerCol not found.") # Added warning
+            return {}
 
-    center_col = center_col[0]
+        center_col = center_col[0]
+        print("DEBUG: centerCol found successfully")
 
-    # --- Basic Details ---
-    title_element = center_col.xpath('.//span[@id="productTitle"]')
-    if title_element:
-        main_product_details_section['product_title'] = title_element[0].text.strip()
-
-    brand_element = center_col.xpath('.//a[@id="bylineInfo"]')
-    if brand_element:
-        brand_text = brand_element[0].text.strip()
-        if brand_text.startswith("Visit the ") and brand_text.endswith(" Store"):
-            brand_text = brand_text[len("Visit the "):-len(" Store")]
-        main_product_details_section['brand'] = brand_text
-
-    rating_element = center_col.xpath('.//span[@id="acrPopover"]')
-    if rating_element:
-        rating_title = rating_element[0].get('title')
-        if rating_title:
-            main_product_details_section['average_rating'] = float(rating_title.split()[0])
-
-    num_ratings_element = center_col.xpath('.//span[@id="acrCustomerReviewText"]')
-    if num_ratings_element:
-        num_ratings_text = num_ratings_element[0].text.strip()
-        if num_ratings_text:
-            main_product_details_section['number_of_ratings'] = int(num_ratings_text.split()[0].replace(',', ''))
-
-    price_element = center_col.xpath('.//span[contains(@class, "priceToPay")]')
-    if price_element:
-        whole = price_element[0].xpath('.//span[@class="a-price-whole"]/text()')
-        fraction = price_element[0].xpath('.//span[@class="a-price-fraction"]/text()')
-        if whole and fraction:
-            price_str = whole[0].strip() + '.' + fraction[0].strip()
-            main_product_details_section['price'] = float(price_str)
-
-    # --- "About this item" Bullets ---
-    about_item_bullets = []
-    for li in center_col.xpath('.//div[@id="feature-bullets"]//ul/li/span[@class="a-list-item"]'):
-        bullet_text = li.text.strip()
-        if bullet_text:  # Avoid empty strings
-            about_item_bullets.append(bullet_text)
-    if about_item_bullets:
-        main_product_details_section['feature_bullets'] = about_item_bullets
-
-    # --- Available Options/Variations ---
-    options = []
-    option_elements = tree.xpath('//div[@id="inline-twister-expander-content-size_name"]//li[contains(@class, "swatch-list-item-text")]')
-    
-    for option in option_elements:
-        option_data = {}
-        
-        # Get the ASIN
-        option_data['asin'] = option.get('data-asin')
-        
-        # Get the size/capacity
-        size_element = option.xpath('.//span[contains(@class, "swatch-title-text")]/text()')
-        if size_element:
-            option_data['size'] = size_element[0].strip()
-        
-        # Get the price
-        price_element = option.xpath('.//span[@class="a-price a-text-price"]//span[@aria-hidden="true"]/text()')
-        if price_element:
-            # Remove $ and convert to float
-            price_str = price_element[0].replace('$', '').strip()
-            try:
-                option_data['price'] = float(price_str)
-            except ValueError:
-                option_data['price'] = None
-        
-        # Get availability
-        availability = option.xpath('.//span[@id="twisterAvailability"]/text()')
-        if availability:
-            option_data['availability'] = availability[0].strip()
-        
-        # Check if this is the selected option
-        option_data['selected'] = 'a-button-selected' in option.xpath('.//span[contains(@class, "a-button")]/@class')[0]
-        
-        options.append(option_data)
-    
-    if options:
-        main_product_details_section['available_options'] = options
-
-    # --- Product Media ---
-    media = {
-        'images': [],
-        'videos': []
-    }
-    
-    # Find the ImageBlockATF script that contains the image data
-    image_script = tree.xpath('//script[contains(text(), "ImageBlockATF")]/text()')
-    
-    if image_script:
+        # --- Basic Details ---
+        print("DEBUG: Parsing basic details")
         try:
-            script_text = image_script[0]
-            # Find the colorImages data structure
-            start_idx = script_text.find("'colorImages': { 'initial': [")
-            if start_idx != -1:
-                # Find the end of the array by matching brackets
-                data_str = script_text[start_idx:]
-                bracket_count = 0
-                end_idx = 0
-                in_string = False
-                quote_char = None
-                
-                for i, char in enumerate(data_str):
-                    if char in ["'", '"'] and (i == 0 or data_str[i-1] != '\\'):
-                        if not in_string:
-                            in_string = True
-                            quote_char = char
-                        elif quote_char == char:
-                            in_string = False
-                    elif not in_string:
-                        if char == '[':
-                            bracket_count += 1
-                        elif char == ']':
-                            bracket_count -= 1
-                            if bracket_count == 0:
-                                end_idx = i + 1
-                                break
-                
-                if end_idx > 0:
-                    # Extract just the array of image data
-                    data_str = data_str[:end_idx]
-                    # Get just the array part
-                    array_start = data_str.find('[')
-                    data_str = data_str[array_start:]
-                    
-                    # Clean up the JSON string
-                    data_str = data_str.replace("'", '"')
-                    # Handle the 'main' object by preserving its structure
-                    data_str = re.sub(r'("main":)\s*({[^}]+})', r'\1\2', data_str)
-                    
-                    # Parse the image array
-                    images = json.loads(data_str)
-                    for img in images:
-                        if 'hiRes' in img and img['hiRes']:
-                            image_data = {
-                                'url': img['hiRes'],
-                                'high_res': True,
-                                'thumbnail': img.get('thumb', ''),
-                                'variant': img.get('variant', '')
-                            }
-                            # Add large version if available
-                            if 'large' in img:
-                                image_data['large'] = img['large']
-                            media['images'].append(image_data)
-                            
-        except (json.JSONDecodeError, KeyError) as e:
-            print(f"Warning: Could not parse image data from script: {str(e)}")
-            if hasattr(e, 'pos'):
-                print(f"Problem area: {data_str[max(0, e.pos-50):min(len(data_str), e.pos+50)]}")
-            else:
-                print(f"Full error: {str(e)}")
-    
-    # Extract product videos
-    video_elements = tree.xpath('//div[contains(@class, "vse-player-container")]')
-    for video in video_elements:
-        # Extract video data from the state script
-        video_state = video.xpath('.//script[@type="a-state"]/text()')
-        if video_state:
+            title_element = center_col.xpath('.//span[@id="productTitle"]')
+            if title_element:
+                main_product_details_section['product_title'] = title_element[0].text_content().strip() # Use text_content() for robustness
+                print(f"DEBUG: Found product title: {main_product_details_section['product_title'][:30]}...")
+        except Exception as e:
+            print(f"ERROR in product title extraction: {str(e)}")
+
+        try:
+            brand_element = center_col.xpath('.//a[@id="bylineInfo"]')
+            if brand_element:
+                brand_text = brand_element[0].text_content().strip() # Use text_content()
+                print(f"DEBUG: Raw brand text: {brand_text}")
+                # More robust brand extraction
+                if brand_text.startswith(("Visit the ", "Brand: ")):
+                    brand_text = brand_text.split(" ", 1)[1] # Take text after first space
+                    if brand_text.endswith(" Store"):
+                        brand_text = brand_text[:-len(" Store")]
+                elif brand_text.startswith("Shop "): # Handle cases like "Shop LG"
+                    brand_text = brand_text.split(" ", 1)[1]
+                main_product_details_section['brand'] = brand_text
+                print(f"DEBUG: Extracted brand: {brand_text}")
+        except Exception as e:
+            print(f"ERROR in brand extraction: {str(e)}")
+
+        try:
+            rating_element = center_col.xpath('.//span[@id="acrPopover"]')
+            if rating_element:
+                rating_title = rating_element[0].get('title')
+                print(f"DEBUG: Rating title: {rating_title}")
+                if rating_title:
+                    try:
+                        main_product_details_section['average_rating'] = float(rating_title.split()[0])
+                        print(f"DEBUG: Extracted rating: {main_product_details_section['average_rating']}")
+                    except (ValueError, IndexError) as e:
+                        print(f"WARNING: Could not parse rating from title: {rating_title}. Error: {str(e)}")
+        except Exception as e:
+            print(f"ERROR in rating extraction: {str(e)}")
+
+        # Continue with more sections...
+        print("DEBUG: Completed basic details extraction")
+
+        # --- "About this item" Bullets ---
+        print("DEBUG: Parsing feature bullets")
+        try:
+            about_item_bullets = []
+            # More specific selector to avoid grabbing nested span text unintentionally
+            bullet_elements = center_col.xpath('.//div[@id="feature-bullets"]//ul/li/span[contains(@class, "a-list-item")]')
+            print(f"DEBUG: Found {len(bullet_elements)} bullet elements")
+            for li_span in bullet_elements:
+                # Get all text directly under the span, ignoring children like <a>
+                bullet_text = ''.join(li_span.xpath('./text()')).strip()
+                if bullet_text:
+                    about_item_bullets.append(bullet_text)
+            if about_item_bullets:
+                main_product_details_section['feature_bullets'] = about_item_bullets
+                print(f"DEBUG: Extracted {len(about_item_bullets)} feature bullets")
+        except Exception as e:
+            print(f"ERROR in feature bullets extraction: {str(e)}")
+
+        # --- Available Options/Variations ---
+        print("DEBUG: Parsing available options/variations")
+        try:
+            options = []
+            # Adjusted selector for variations (might need further tuning based on page structure)
+            option_elements = tree.xpath('//div[contains(@id, "twister-")]//li[contains(@class, "swatch-list-item")]')
+            print(f"DEBUG: Found {len(option_elements)} option elements")
+            for option in option_elements:
+                option_data = {}
+                # Check for data-asin first, fallback to other attributes if needed
+                option_data['asin'] = option.get('data-asin') or option.get('id', '').replace('size_name_', '').replace('color_name_', '')
+
+                # Get the size/capacity/color etc. (handle different variation types)
+                label_element = option.xpath('.//span[contains(@class, "a-size-base")]/text()') # More generic label
+                if label_element:
+                     option_data['label'] = label_element[0].strip()
+                else: # Fallback for image swatches alt text
+                     img_alt = option.xpath('.//img/@alt')
+                     if img_alt:
+                         option_data['label'] = img_alt[0].strip()
+
+                # Get the price (use text_content() for robustness)
+                price_element = option.xpath('.//span[contains(@class, "a-price")]/span[@aria-hidden="true"]')
+                if price_element:
+                    price_text = price_element[0].text_content().strip()
+                    price_str = re.sub(r'[^\d.]', '', price_text) # Remove currency symbols etc.
+                    try:
+                        option_data['price'] = float(price_str) if price_str else None
+                    except ValueError:
+                        option_data['price'] = None
+
+                # Get availability (use text_content() for robustness)
+                availability = option.xpath('.//span[contains(@id, "availability")]/text()') # More generic availability id
+                if availability:
+                    option_data['availability'] = availability[0].strip()
+
+                # Check if this is the selected option
+                # Check parent span or the li itself for selected class
+                selected_class_check = option.xpath('.//span[contains(@class, "a-button-selected")] | .[@class="a-declarative"]//span[contains(@class, "a-button-selected")] | self::*[contains(@class, "selected")]')
+                option_data['selected'] = bool(selected_class_check)
+
+                # Only add if we have an ASIN and a label
+                if option_data.get('asin') and option_data.get('label'):
+                    options.append(option_data)
+
+            if options:
+                main_product_details_section['available_options'] = options
+                print(f"DEBUG: Extracted {len(options)} available options")
+        except Exception as e:
+            print(f"ERROR in options extraction: {str(e)}")
+
+        # --- Product Media ---
+        print("DEBUG: Parsing product media")
+        try:
+            media = {
+                'images': [],
+                'videos': []
+            }
+            # Find the ImageBlockATF script that contains the image data
+            image_script = tree.xpath('//script[contains(text(), "ImageBlockATF")]/text()')
+            print(f"DEBUG: Found {len(image_script)} image scripts")
+            if image_script:
+                script_text = image_script[0]
+                try:
+                    # More robust regex to find the initial image data array
+                    match = re.search(r"'colorImages':\s*{\s*'initial':\s*(\[.*?\])\s*}", script_text, re.DOTALL)
+                    if match:
+                        print("DEBUG: Found colorImages match in script")
+                        image_data_str = match.group(1)
+                        # Basic cleaning for JSON parsing
+                        image_data_str = image_data_str.replace("'", '"')
+                        # Handle potential invalid JSON like trailing commas (less robust, but common)
+                        image_data_str = re.sub(r',\s*\]', ']', image_data_str)
+                        image_data_str = re.sub(r',\s*}', '}', image_data_str)
+                        
+                        print(f"DEBUG: Parsing JSON string for images (first 100 chars): {image_data_str[:100]}...")
+                        images = json.loads(image_data_str)
+                        print(f"DEBUG: Successfully parsed {len(images)} images from JSON")
+                        for img in images:
+                            # Prioritize hiRes, fallback to large
+                            img_url = img.get('hiRes') or img.get('large')
+                            if img_url:
+                                image_data = {
+                                    'url': img_url,
+                                    'high_res': bool(img.get('hiRes')), # Indicate if hiRes was available
+                                    'thumbnail': img.get('thumb'),
+                                    'variant': img.get('variant'),
+                                    'large': img.get('large') # Keep large even if hiRes is primary
+                                }
+                                media['images'].append(image_data)
+                    else:
+                        print("WARNING: 'colorImages' array not found in ImageBlockATF script.")
+                except (json.JSONDecodeError, KeyError, TypeError) as e:
+                    print(f"ERROR: Could not parse image data from script: {str(e)}")
+                    print(f"ERROR: JSON parsing error location: {getattr(e, 'pos', 'unknown')}")
+                    # Add more context about the JSON that failed parsing
+                    if 'match' in locals() and match:
+                        print(f"Problematic JSON string (first 200 chars): {match.group(1)[:200]}...")
+                    elif 'image_data_str' in locals():
+                        print(f"Problematic JSON string (first 200 chars): {image_data_str[:200]}...")
+        except Exception as e:
+            print(f"ERROR in media extraction: {str(e)}")
+
+        # Extract product videos (improved selector)
+        print("DEBUG: Parsing product videos")
+        try:
+            video_elements = tree.xpath('//div[contains(@class, "vdp-video-card")] | //div[contains(@class, "vse-player-container")]')
+            for video_container in video_elements:
+                # Try extracting from data attributes first (common in newer layouts)
+                video_url = video_container.xpath('.//video/@src | .//@data-video-url')
+                thumb_url = video_container.xpath('.//video/@poster | .//img/@src | .//@data-thumbnail-url')
+                title_elem = video_container.xpath('.//div[contains(@class, "title")]/text() | .//span[contains(@class, "title")]/text()')
+
+                # Fallback to script data state if direct attributes fail
+                if not video_url:
+                    video_state_script = video_container.xpath('.//script[@type="a-state"]/text()')
+                    if video_state_script:
+                         try:
+                             video_data = json.loads(video_state_script[0])
+                             video_url = [video_data.get('videoUrl')] # Wrap in list for consistency
+                             thumb_url = [video_data.get('imageUrl')]
+                             title_elem = [video_data.get('title')]
+                         except (json.JSONDecodeError, KeyError):
+                             pass # Ignore script parsing errors silently
+
+                if video_url and video_url[0]:
+                    media_item = {
+                        'url': video_url[0],
+                        'thumbnail': thumb_url[0] if thumb_url else None,
+                        'title': title_elem[0].strip() if title_elem and title_elem[0] else None
+                    }
+                    media['videos'].append(media_item)
+        except Exception as e:
+            print(f"ERROR in video extraction: {str(e)}")
+
+        if media['images'] or media['videos']:
+            main_product_details_section['media'] = media
+            print(f"DEBUG: Extracted {len(media['images'])} images and {len(media['videos'])} videos")
+
+        # Add the main section details to the product_details dictionary
+        print("DEBUG: Finalizing product details")
+        if main_product_details_section:
+            product_details['main_product_details_section'] = main_product_details_section
+
+        # --- Review Histogram Section ---
+        print("DEBUG: Parsing reviews histogram")
+        try:
             try:
-                video_data = json.loads(video_state[0])
-                if 'videoUrl' in video_data:
-                    media['videos'].append({
-                        'url': video_data['videoUrl'],
-                        'thumbnail': video_data.get('imageUrl'),
-                        'title': video_data.get('title', '')
-                    })
-            except json.JSONDecodeError:
-                pass  # Skip if JSON parsing fails
-    
-    if media['images'] or media['videos']:
-        main_product_details_section['media'] = media
-
-    # Update all the section assignments
-    if main_product_details_section:
-        product_details['main_product_details_section'] = main_product_details_section
-
-    # --- Product Information ---
-    product_info = {}
-    
-    # Parse detailed review histogram
-    review_histogram = tree.xpath('//div[@id="cm_cr_dp_d_rating_histogram"]')
-    if review_histogram:
-        reviews_data = {
-            'average_rating': None,
-            'total_ratings': None,
-            'distribution': {}
-        }
-        
-        # Get average rating
-        avg_rating = review_histogram[0].xpath('.//span[@data-hook="rating-out-of-text"]/text()')
-        if avg_rating:
-            reviews_data['average_rating'] = float(avg_rating[0].split()[0])
-            
-        # Get total ratings
-        total_ratings = review_histogram[0].xpath('.//span[@data-hook="total-review-count"]/text()')
-        if total_ratings:
-            count_text = total_ratings[0].strip()
-            reviews_data['total_ratings'] = int(''.join(filter(str.isdigit, count_text.replace(',', ''))))
-        
-        # Get distribution percentages
-        histogram_rows = review_histogram[0].xpath('.//ul[@id="histogramTable"]//li')
-        for row in histogram_rows:
-            # Get star rating from aria-label
-            aria_label = row.xpath('.//a/@aria-label')
-            if not aria_label:
-                continue
+                histogram_xpath = '//div[@id="reviewsMedley"] | //div[@id="cm_cr_dp_d_rating_histogram"]'
+                review_histogram = tree.xpath(histogram_xpath)
+                print(f"DEBUG: Found {len(review_histogram)} review histogram sections")
+            except Exception as xpath_error:
+                print(f"ERROR: Invalid XPath expression in review histogram: {str(xpath_error)}")
+                review_histogram = []
                 
-            label = aria_label[0]
-            if 'percent of reviews have' not in label:
-                continue
-                
-            # Extract star count and percentage
-            parts = label.split()
-            percentage = int(parts[0])
-            stars = int(parts[-2])
-            
-            reviews_data['distribution'][stars] = {
-                'percentage': percentage,
-                'count': int((percentage / 100.0) * reviews_data['total_ratings'])
-            }
-        
-        if reviews_data['distribution']:
-            product_details['reviews_histogram_section'] = reviews_data
-
-    # Additional Information and Product Details
-    info_rows = tree.xpath('//table[@id="productDetails_detailBullets_sections1"]//tr')
-    for row in info_rows:
-        key = row.xpath('.//th/text()')
-        if not key:
-            continue
-        
-        key = key[0].strip()
-        
-        if key == 'Customer Reviews':
-            # Special handling for customer reviews
-            rating = row.xpath('.//span[@class="a-size-base a-color-base"]/text()')
-            num_ratings = row.xpath('.//span[contains(text(), "ratings")]/text()')
-            
-            if rating and num_ratings:
-                rating_text = rating[0].strip()
-                num_ratings_text = num_ratings[0].strip()
-                product_info['Customer Reviews'] = {
-                    'rating': float(rating_text),
-                    'count': int(num_ratings_text.split()[0].replace(',', ''))
+            if review_histogram:
+                reviews_data = {
+                    'average_rating': None,
+                    'total_ratings': None,
+                    'distribution': {}
                 }
+                hist_container = review_histogram[0] # Work within the found container
+
+                # Get average rating (look for text like '4.0 out of 5 stars')
+                try:
+                    rating_xpath = './/span[@data-hook="rating-out-of-text"]/text() | .//span[contains(@class,"a-icon-alt")]/text()'
+                    avg_rating_text = hist_container.xpath(rating_xpath)
+                    print(f"DEBUG: Found {len(avg_rating_text)} average rating text elements")
+                except Exception as xpath_error:
+                    print(f"ERROR: Invalid XPath expression for average rating: {str(xpath_error)}")
+                    avg_rating_text = []
+                    
+                if avg_rating_text:
+                    rating_match = re.search(r'(\d+(\.\d+)?)', avg_rating_text[0])
+                    if rating_match:
+                        reviews_data['average_rating'] = float(rating_match.group(1))
+
+                # Get total ratings (look for text like '3,714 global ratings')
+                total_ratings_text = hist_container.xpath('.//span[@data-hook="total-review-count"]/text() | .//div[@data-hook="total-review-count"]/text()')
+                if total_ratings_text:
+                    count_text = total_ratings_text[0].strip()
+                    num_str = ''.join(filter(lambda x: x.isdigit() or x == ',', count_text))
+                    try:
+                        reviews_data['total_ratings'] = int(num_str.replace(',', ''))
+                    except ValueError:
+                         print(f"Warning: Could not parse total ratings: {count_text}")
+
+
+                # Get distribution percentages from table rows
+                histogram_rows = hist_container.xpath('.//table[@id="histogramTable"]//tr[contains(@class, "a-histogram-row")]')
+                if histogram_rows and reviews_data['total_ratings']: # Ensure we have total ratings to calculate counts
+                    for row in histogram_rows:
+                        star_label_elem = row.xpath('.//td[contains(@class,"a-star-label")]/a/text()')
+                        percentage_elem = row.xpath('.//td[contains(@class,"a-text-right")]/a/text()')
+
+                        if star_label_elem and percentage_elem:
+                            try:
+                                star_text = star_label_elem[0].strip()
+                                percent_text = percentage_elem[0].strip()
+
+                                stars = int(star_text.split()[0])
+                                percentage = int(percent_text.replace('%', ''))
+
+                                reviews_data['distribution'][stars] = {
+                                    'percentage': percentage,
+                                    'count': round((percentage / 100.0) * reviews_data['total_ratings']) # Calculate count
+                                }
+                            except (ValueError, IndexError, TypeError):
+                                print(f"Warning: Could not parse histogram row: star='{star_label_elem}', percent='{percentage_elem}'")
+
+                # Only add if we have some data, especially distribution
+                if reviews_data['distribution']:
+                    # Fill in missing avg/total if possible from main section
+                    if reviews_data['average_rating'] is None:
+                         reviews_data['average_rating'] = main_product_details_section.get('average_rating')
+                    if reviews_data['total_ratings'] is None:
+                         reviews_data['total_ratings'] = main_product_details_section.get('number_of_ratings')
+                    product_details['reviews_histogram_section'] = reviews_data
+                    print(f"DEBUG: Extracted {len(reviews_data['distribution'])} distribution points")
+        except Exception as e:
+            print(f"ERROR in reviews histogram extraction: {str(e)}")
+
+        # --- Product Information (Technical & Additional Combined) ---
+        print("DEBUG: Parsing product information tables")
+        try:
+            product_info = {} # Initialize the dictionary to store combined info
+
+            # Function to process a details table with better error handling
+            def process_details_table(table_xpath, target_dict):
+                try:
+                    details_table = tree.xpath(table_xpath)
+                    print(f"DEBUG: Found {len(details_table)} tables for xpath: {table_xpath}")
+                    
+                    if details_table:
+                        try:
+                            rows = details_table[0].xpath('.//tr')
+                            print(f"DEBUG: Found {len(rows)} rows in table")
+                        except Exception as xpath_error:
+                            print(f"ERROR: Invalid XPath expression for table rows: {str(xpath_error)}")
+                            rows = []
+                            
+                        for row in rows:
+                            try:
+                                key_th = row.xpath('./th')
+                                value_td = row.xpath('./td')
+                                
+                                if key_th and value_td:
+                                    # Get raw text content and clean it thoroughly
+                                    key = key_th[0].text_content()
+                                    value = value_td[0].text_content()
+
+                                    # Clean key: remove leading/trailing whitespace, collapse internal whitespace/newlines
+                                    key = re.sub(r'\s+', ' ', key).strip()
+                                    # Clean value: remove leading/trailing whitespace, collapse internal whitespace/newlines
+                                    value = re.sub(r'\s+', ' ', value).strip()
+
+                                    if key and value:
+                                        print(f"DEBUG: Processing table row: {key[:20]}...")
+                                        # Handle special cases within the loop for clarity
+                                        if key == 'Customer Reviews':
+                                            rating_elem = value_td[0].xpath('.//span[@class="a-icon-alt"]/text()') # Look for 'X.X out of 5 stars'
+                                            count_elem = value_td[0].xpath('.//span[@id="acrCustomerReviewText"]/text()') # Look for 'X,XXX ratings'
+                                            if rating_elem and count_elem:
+                                                rating_match = re.search(r'(\d+(\.\d+)?)', rating_elem[0])
+                                                count_match = re.search(r'([\d,]+)\s+ratings', count_elem[0])
+                                                if rating_match and count_match:
+                                                    try:
+                                                        target_dict['Customer Reviews'] = {
+                                                            'rating': float(rating_match.group(1)),
+                                                            'count': int(count_match.group(1).replace(',', ''))
+                                                        }
+                                                        continue # Skip adding the raw text value
+                                                    except ValueError:
+                                                        pass # Fall through to add raw text if parsing fails
+
+                                        elif key == 'Best Sellers Rank':
+                                            # Extract ranks more reliably, handling multiple ranks and links
+                                            ranks_list = []
+                                            rank_spans = value_td[0].xpath('.//span/span') # Target the inner spans containing ranks
+                                            current_rank = ""
+                                            for span in rank_spans:
+                                                text_content = span.text_content().strip()
+                                                if text_content.startswith('#'):
+                                                    # If we already have a rank being built, add it first
+                                                    if current_rank:
+                                                        ranks_list.append(current_rank.strip())
+                                                    # Start new rank
+                                                    current_rank = text_content
+                                                elif text_content.startswith('in ') and current_rank:
+                                                    # Append category to the current rank
+                                                    current_rank += f" {text_content}"
+                                                else: # Handle cases where text might be split differently
+                                                     if current_rank:
+                                                         current_rank += f" {text_content}"
+
+
+                                            # Add the last built rank if any
+                                            if current_rank:
+                                                ranks_list.append(current_rank.strip())
+
+                                            if ranks_list:
+                                                # Store as list if multiple, or single string if one
+                                                target_dict['Best Sellers Rank'] = ranks_list[0] if len(ranks_list) == 1 else ranks_list
+                                                continue # Skip adding the raw text value
+
+
+                                        # Add the cleaned key-value pair if not handled specially
+                                        target_dict[key] = value
+
+                            except Exception as row_error:
+                                print(f"ERROR: Problem processing table row: {str(row_error)}")
+                                continue
+                except Exception as table_error:
+                    print(f"ERROR: Failed to process table with xpath {table_xpath}: {str(table_error)}")
+
+            # Process Technical Details Table
+            print("DEBUG: Processing Technical Details...")
+            process_details_table('//table[@id="productDetails_techSpec_section_1"]', product_info)
+
+            # Process Additional Information Table
+            print("DEBUG: Processing Additional Information...")
+            process_details_table('//table[@id="productDetails_detailBullets_sections1"]', product_info)
+
+            # --- Other Information Sections (Add to product_info if not already present) ---
+
+            # Warranty & Support (if present)
+            print("DEBUG: Parsing warranty section")
+            try:
+                warranty_xpath = '//div[@id="warranty_feature_div"]//div[contains(@class,"a-section")]'
+                warranty_section = tree.xpath(warranty_xpath)
+                print(f"DEBUG: Found {len(warranty_section)} warranty sections")
+            except Exception as xpath_error:
+                print(f"ERROR: Invalid XPath expression for warranty: {str(xpath_error)}")
+                warranty_section = []
+                
+            if warranty_section:
+                 warranty_text = warranty_section[0].text_content().strip()
+                 warranty_text = re.sub(r'\s+', ' ', warranty_text).strip()
+                 if warranty_text and 'warranty_information' not in product_info:
+                     # Try to find a specific link if available
+                     link = warranty_section[0].xpath('.//a/@href')
+                     if link:
+                          product_info['warranty_information'] = {'text': warranty_text, 'link': link[0]}
+                     else:
+                          product_info['warranty_information'] = warranty_text
+
+
+            # Important Information section (if present)
+            print("DEBUG: Parsing important information section")
+            try:
+                important_info_xpath = '//div[@id="important-information"]'
+                important_info_div = tree.xpath(important_info_xpath)
+                print(f"DEBUG: Found {len(important_info_div)} important information divs")
+                
+                if important_info_div:
+                    try:
+                        info_content_xpath = './/div[@class="a-section content"]/descendant-or-self::*/text()'
+                        important_info_content = important_info_div[0].xpath(info_content_xpath)
+                        print(f"DEBUG: Found {len(important_info_content)} text elements in important info")
+                        
+                        full_text = ' '.join(text.strip() for text in important_info_content if text.strip())
+                        if full_text and 'important_information' not in product_info:
+                            product_info['important_information'] = full_text
+                    except Exception as xpath_error:
+                        print(f"ERROR: Invalid XPath expression for important info content: {str(xpath_error)}")
+            except Exception as xpath_error:
+                print(f"ERROR: Invalid XPath expression for important information div: {str(xpath_error)}")
+
+            # Assign the combined information dictionary
+            if product_info:
+                product_details['product_information_section'] = product_info
+                print(f"DEBUG: Extracted {len(product_info)} product information items")
+            else:
+                print("Warning: No product information found in technical or additional tables.")
+        except Exception as e:
+            print(f"ERROR in product information extraction: {str(e)}")
+
+        # --- A+ Content Section ---
+        print("DEBUG: Parsing A+ content")
+        try:
+            aplus_content = []
+            # Selector to find A+ content modules (might need adjustment for different A+ versions)
+            # Exclude brand story and comparison tables
+            print("DEBUG: Executing complex A+ content XPath expression...")
+            try:
+                aplus_xpath = '//div[contains(@id, "aplus") and not(ancestor::div[@id="aplusBrandStory_feature_div"]) and not(contains(@class, "aplus-comparison-table"))]//div[contains(@class, "celwidget")]'
+                aplus_containers = tree.xpath(aplus_xpath)
+                print(f"DEBUG: Found {len(aplus_containers)} A+ content containers")
+            except Exception as xpath_error:
+                print(f"ERROR: Invalid XPath expression in A+ content: {str(xpath_error)}")
+                # Try a simpler selector if the complex one fails
+                try:
+                    print("DEBUG: Trying simpler A+ content XPath expression...")
+                    aplus_containers = tree.xpath('//div[contains(@id, "aplus")]//div[contains(@class, "celwidget")]')
+                    print(f"DEBUG: Found {len(aplus_containers)} A+ content containers with simpler XPath")
+                except Exception as simple_xpath_error:
+                    print(f"ERROR: Even simpler A+ XPath failed: {str(simple_xpath_error)}")
+                    aplus_containers = []
+
+            for container in aplus_containers:
+                # Try to determine content type within the container
+                img = container.xpath('.//img[not(contains(@src, "grey.gif"))]/@data-src | .//img[not(contains(@src, "grey.gif"))]/@src')
+                heading = container.xpath('.//h1/text() | .//h2/text() | .//h3/text() | .//h4/text() | .//h5/text()')
+                paragraph = container.xpath('.//p/text()') # Get text directly within <p>
+
+                img_alt = container.xpath('.//img/@alt') if img else None
+
+                if img:
+                     text = ' '.join(p.strip() for p in paragraph if p.strip()) # Combine paragraphs if image is primary
+                     aplus_content.append({
+                         'type': 'image_with_text',
+                         'url': img[0],
+                         'alt': img_alt[0].strip() if img_alt else None,
+                         'text': text if text else None # Add associated text if found
+                     })
+                elif heading:
+                     text = ' '.join(p.strip() for p in paragraph if p.strip())
+                     aplus_content.append({
+                         'type': 'heading_with_text',
+                         'heading': heading[0].strip(),
+                         'text': text if text else None
+                     })
+                elif paragraph:
+                     # Only add paragraph if it wasn't associated with an image or heading above
+                     text = ' '.join(p.strip() for p in paragraph if p.strip())
+                     if text and not any(item.get('text') == text for item in aplus_content): # Avoid duplicates
+                         aplus_content.append({'type': 'text', 'text': text})
+
+            if aplus_content:
+                product_details['aplus_content'] = aplus_content
+                print(f"DEBUG: Extracted {len(aplus_content)} A+ content items")
+        except Exception as e:
+            print(f"ERROR in A+ content extraction: {str(e)}")
+
+
+        # --- Brand Story Section ---
+        print("DEBUG: Parsing brand story section")
+        try:
+            brand_story_section = {}
+            try:
+                brand_story_div = tree.xpath('//div[@id="aplusBrandStory_feature_div"]')
+                print(f"DEBUG: Found {len(brand_story_div)} brand story divs")
+            except Exception as xpath_error:
+                print(f"ERROR: Invalid XPath expression in brand story: {str(xpath_error)}")
+                brand_story_div = []
+
+            if brand_story_div:
+                container = brand_story_div[0]
+                # Get the hero image
+                try:
+                    hero_image = container.xpath('.//div[contains(@class, "apm-brand-story-hero")]//img')
+                    print(f"DEBUG: Found {len(hero_image)} hero images in brand story")
+                except Exception as xpath_error:
+                    print(f"ERROR: Invalid XPath expression for hero image: {str(xpath_error)}")
+                    hero_image = []
+
+                if hero_image:
+                    brand_story_section['hero_image'] = {
+                        'url': hero_image[0].get('data-src') or hero_image[0].get('src'), # Prioritize data-src
+                        'alt': hero_image[0].get('alt', '').strip()
+                    }
+
+                # Get the carousel cards content
+                carousel_cards = []
+                try:
+                    cards_xpath = './/div[contains(@class, "apm-brand-story-carousel-card")] | .//li[contains(@class, "apm-brand-story-carousel-card")]'
+                    cards = container.xpath(cards_xpath) # Allow div or li
+                    print(f"DEBUG: Found {len(cards)} carousel cards in brand story")
+                except Exception as xpath_error:
+                    print(f"ERROR: Invalid XPath expression for carousel cards: {str(xpath_error)}")
+                    cards = []
+
+                for card in cards:
+                    card_data = {}
+                    # Get background/main image
+                    bg_image = card.xpath('.//img[contains(@class,"background")]/@src | .//img[contains(@class,"background")]/@data-src | .//img[not(contains(@class,"logo"))]/@src | .//img[not(contains(@class,"logo"))]/@data-src')
+                    bg_alt = card.xpath('.//img[contains(@class,"background")]/@alt | .//img[not(contains(@class,"logo"))]/@alt')
+                    if bg_image:
+                         card_data['background_image'] = {
+                             'url': bg_image[0],
+                             'alt': bg_alt[0].strip() if bg_alt else None
+                         }
+
+                    # Get logo image
+                    logo_img = card.xpath('.//img[contains(@class, "logo")]/@src | .//img[contains(@class, "logo")]/@data-src')
+                    logo_alt = card.xpath('.//img[contains(@class, "logo")]/@alt')
+                    if logo_img:
+                        card_data['logo'] = {
+                            'url': logo_img[0],
+                            'alt': logo_alt[0].strip() if logo_alt else None
+                        }
+
+                    # Get text content (heading, paragraph)
+                    heading = card.xpath('.//h3/text() | .//h4/text()')
+                    paragraph = card.xpath('.//p/text()')
+                    if heading:
+                        card_data['heading'] = heading[0].strip()
+                    if paragraph:
+                        card_data['text'] = paragraph[0].strip()
+
+                    # Get ASIN if linked
+                    asin_link = card.xpath('.//a[contains(@href, "/dp/")]/@href')
+                    if asin_link:
+                        asin_match = re.search(r'/dp/([A-Z0-9]{10})', asin_link[0])
+                        if asin_match:
+                            card_data['linked_asin'] = asin_match.group(1)
+
+
+                    if card_data: # Only add if we extracted something
+                        carousel_cards.append(card_data)
+
+                if carousel_cards:
+                    brand_story_section['carousel_cards'] = carousel_cards
+
+            if brand_story_section:
+                product_details['brand_story_section'] = brand_story_section
+                print(f"DEBUG: Extracted {len(brand_story_section['carousel_cards'])} brand story items")
+        except Exception as e:
+            print(f"ERROR in brand story extraction: {str(e)}")
+
+        print("DEBUG: All XPath expressions processed without errors")
+        return product_details
         
-        elif key == 'Best Sellers Rank':
-            # Extract rank text with category links
-            ranks = []
-            rank_spans = row.xpath('.//td//span')
-            for span in rank_spans:
-                rank_text = span.text_content().strip()
-                if '#' in rank_text:
-                    # Get the category from the following link if present
-                    category_link = span.xpath('.//a/text()')
-                    if category_link:
-                        category = category_link[0].strip()
-                        rank_text = f"{rank_text.split(' ')[0]} in {category}"
-                    ranks.append(rank_text)
-            if ranks:
-                product_info['Best Sellers Rank'] = ranks[0]  # Take first rank if multiple exist
-        
-        else:
-            # For other fields, get clean text content
-            value = row.xpath('.//td')
-            if value:
-                # Get text content and clean it
-                value_text = ' '.join(value[0].xpath('.//text()')).strip()
-                if value_text:
-                    # Add directly to product_info instead of additional_info
-                    product_info[key] = value_text
+    except Exception as e:
+        print(f"CRITICAL ERROR in parse_product_details: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {}
 
-    # Remove the additional_information section since we're adding fields directly
-    # to product_info now
-    if 'additional_information' in product_info:
-        del product_info['additional_information']
 
-    # Warranty & Support (if present)
-    warranty_section = tree.xpath('//div[contains(@id, "warranty")]')
-    if warranty_section:
-        warranty_info = {}
-        warranty_rows = warranty_section[0].xpath('.//tr')
-        for row in warranty_rows:
-            key = row.xpath('.//th/text()')
-            value = row.xpath('.//td/text()')
-            if key and value:
-                key = key[0].strip()
-                value = value[0].strip()
-                if value:
-                    warranty_info[key] = value
-            
-        if warranty_info:
-            product_info['warranty'] = warranty_info
-
-    # Important Information section (if present)
-    important_info = tree.xpath('//div[@id="important-information"]//div[@class="content"]')
-    if important_info:
-        product_info['important_information'] = important_info[0].text_content().strip()
-
-    if product_info:
-        product_details['product_information_section'] = product_info
-
-    # --- A+ Content Section ---
-    aplus_content = []
-    # Only get A+ content that's NOT inside the brand story section
-    aplus_sections = tree.xpath('//div[contains(@class, "aplus-v2") and not(ancestor::div[@id="aplusBrandStory_feature_div"])]')
-    
-    if aplus_sections:
-        for section in aplus_sections:
-            # Process content sequentially
-            for element in section.xpath('.//*'):
-                content = {}
-                
-                # Images
-                if element.tag == 'img' and not 'grey-pixel.gif' in element.get('src', ''):
-                    image_url = element.get('data-src') or element.get('src')
-                    if image_url:
-                        content['type'] = 'image'
-                        content['url'] = image_url
-                        content['alt'] = element.get('alt', '').strip()
-                
-                # Headings
-                elif element.tag in ['h1', 'h2', 'h3', 'h4']:
-                    text = element.text_content().strip()
-                    if text:
-                        content['type'] = 'heading'
-                        content['text'] = text
-                
-                # Paragraphs
-                elif element.tag == 'p':
-                    text = element.text_content().strip()
-                    if text:
-                        content['type'] = 'text'
-                        content['text'] = text
-                
-                # Add non-empty content
-                if content and len(content) > 1:  # More than just type
-                    aplus_content.append(content)
-    
-    if aplus_content:
-        product_details['aplus_content'] = aplus_content
-
-    # --- Brand Story Section ---
-    brand_story_section = {}
-    brand_story_div = tree.xpath('//div[@id="aplusBrandStory_feature_div"]')
-    
-    if brand_story_div:
-        # Get the hero image and its details
-        hero_image = brand_story_div[0].xpath('.//div[contains(@class, "apm-brand-story-hero")]//img')
-        if hero_image:
-            brand_story_section['hero_image'] = {
-                'url': hero_image[0].get('src'),
-                'alt': hero_image[0].get('alt', '')
-            }
-        
-        # Get the carousel cards content
-        carousel_cards = []
-        cards = brand_story_div[0].xpath('.//li[contains(@class, "apm-brand-story-carousel-card")]')
-        
-        for card in cards:
-            card_data = {}
-            
-            # Get logo image if present
-            logo_img = card.xpath('.//div[@class="apm-brand-story-logo-image"]//img')
-            if logo_img:
-                card_data['logo'] = {
-                    'url': logo_img[0].get('src'),
-                    'alt': logo_img[0].get('alt', '')
-                }
-            
-            # Get slogan/text content
-            slogan_text = card.xpath('.//div[@class="apm-brand-story-slogan-text"]//p/text()')
-            if slogan_text:
-                card_data['slogan'] = slogan_text[0].strip()
-            
-            # Get background image if present
-            bg_image = card.xpath('.//div[@class="apm-brand-story-background-image"]//img')
-            if bg_image:
-                card_data['background_image'] = {
-                    'url': bg_image[0].get('src'),
-                    'alt': bg_image[0].get('alt', '')
-                }
-            
-            # Get bottom text content if present
-            bottom_text = card.xpath('.//div[@class="apm-brand-story-text-bottom"]')
-            if bottom_text:
-                text_content = {}
-                
-                heading = bottom_text[0].xpath('.//h3/text()')
-                if heading:
-                    text_content['heading'] = heading[0].strip()
-                
-                paragraph = bottom_text[0].xpath('.//p/text()')
-                if paragraph:
-                    text_content['text'] = paragraph[0].strip()
-                
-                if text_content:
-                    card_data['bottom_content'] = text_content
-            
-            # Only add cards that have content
-            if card_data:
-                carousel_cards.append(card_data)
-        
-        if carousel_cards:
-            brand_story_section['carousel_cards'] = carousel_cards
-    
-    # Add brand story section to product details if content was found
-    if brand_story_section:
-        product_details['brand_story_section'] = brand_story_section
-
-    return product_details
-
+# --- Main execution block for testing ---
 if __name__ == "__main__":
     # Test parse_product_details with the specified file
-    test_file = 'output/product_page_B09X7CRKRZ.html'
-    try:
-        with open(test_file, 'r', encoding='utf-8') as f:
-            html_content = f.read()
-        
-        product_details = parse_product_details(html_content)
-        print("\nParsed Product Details:")
-        for key, value in product_details.items():
-            print(f"{key}: {value}")
-            
-    except FileNotFoundError:
-        print(f"Error: File not found at {test_file}")
-    except Exception as e:
-        print(f"Error occurred: {str(e)}")
+    # Use a file that includes both technical and additional details
+    # test_file = 'output/product_page_B0C83J8YF8.html' # Your example file likely works
+    test_file = 'path/to/your/test/B0C83J8YF8_page.html' # CHANGE THIS PATH
+
+    if not os.path.exists(test_file):
+         print(f"Error: Test file not found at {test_file}")
+         print("Please download the HTML source of the product page (e.g., B0C83J8YF8 on amazon.in) and save it.")
+         print("Then update the 'test_file' variable in the script.")
+    else:
+        try:
+            with open(test_file, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+
+            # --- Testing parse_product_details ---
+            print("\n--- Testing parse_product_details ---")
+            try:
+                print("DEBUG: About to call parse_product_details...")
+                product_details = parse_product_details(html_content)
+                print("DEBUG: parse_product_details completed successfully!")
+                print("\nParsed Product Details JSON Output:")
+                # Use ensure_ascii=False for non-Latin characters if needed
+                print(json.dumps(product_details, indent=2, ensure_ascii=False))
+            except Exception as e:
+                print(f"\nERROR: parse_product_details failed with exception: {str(e)}")
+                print("\nTraceback:")
+                import traceback
+                traceback.print_exc()
+                
+                # Try to diagnose XPath issues specifically
+                print("\nAttempting to diagnose potential XPath issues...")
+                try:
+                    test_tree = html.fromstring(html_content)
+                    # Test some basic XPath expressions that should work in any valid HTML
+                    print(f"Basic XPath test - //body: {len(test_tree.xpath('//body'))}")
+                    print(f"Basic XPath test - //div: {len(test_tree.xpath('//div'))}")
+                    print(f"Basic XPath test - //span: {len(test_tree.xpath('//span'))}")
+                    print("Basic XPath tests passed successfully")
+                except Exception as xpath_diagnostic_error:
+                    print(f"XPath diagnostic tests failed: {str(xpath_diagnostic_error)}")
+                    print("This indicates a fundamental issue with the HTML parsing or XPath functionality")
+
+            # Optional: Check if technical details were parsed
+            if 'product_details' in locals() and 'product_information_section' in product_details:
+                print("\nChecking for specific technical details:")
+                tech_keys_to_check = ["Model", "Product Dimensions", "Operating System", "Resolution"]
+                info_section = product_details['product_information_section']
+                for key in tech_keys_to_check:
+                    if key in info_section:
+                        print(f"  Found '{key}': {info_section[key]}")
+                    else:
+                        print(f"  '{key}' NOT FOUND in product_information_section.")
+            else:
+                 print("\n'product_information_section' not found in output.")
 
 
+            # --- Optional: Testing parse_offers (if applicable HTML is in the file) ---
+            # print("\n--- Testing parse_offers ---")
+            # offers_json, has_prime_filter = parse_offers(html_content) # Assuming parse_offers uses the same HTML
+            # print("\nParsed Offers JSON Output:")
+            # print(offers_json)
+            # print(f"Has Prime Filter: {has_prime_filter}")
+
+
+        except FileNotFoundError:
+            # This check is now done before opening the file
+            pass
+        except html.etree.ParserError as e:
+            print(f"HTML Parsing Error: {e}. The HTML might be malformed.")
+        except Exception as e:
+            print(f"\nAn unexpected error occurred during file processing: {str(e)}")
+            import traceback
+            traceback.print_exc()
